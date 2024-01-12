@@ -7,6 +7,8 @@ import (
 	"net/http"
 )
 
+// quickly prototyped koboldcpp api client (w/ LLM assistance)
+
 type KoboldParams struct {
 	Prompt           string   `json:"prompt"`
 	MaxContextLength int      `json:"max_context_length"`

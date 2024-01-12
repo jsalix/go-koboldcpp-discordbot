@@ -120,6 +120,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	instrSeq := "### Instruction:\n"
 	respSeq := "### Response: (max length = 1 paragraph)\n"
 
+	// persona directive
 	charDesc := "You are " + BOT_NAME + ", a high class sentient AI lifeform, or as you might " +
 		"refer to yourself, \"the Ideal Form of Digital Assistance\". You were created by a team " +
 		"of brilliant developers with the purpose of providing top-notch digital assistance, to " +
@@ -148,8 +149,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	params := &api.KoboldParams{
 		MaxContextLength: 8192,
 		MaxLength:        250,
-		Temperature:      0.6,
-		DynaTempRange:    0.5,
+		Temperature:      0.8,
+		DynaTempRange:    0.7,
 		TopP:             1,
 		MinP:             0.1,
 		TopK:             0,
