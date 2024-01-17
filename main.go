@@ -100,7 +100,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}
 
-	contextMessages, err := s.ChannelMessages(m.ChannelID, 4, m.ID, "", "")
+	contextMessages, err := s.ChannelMessages(m.ChannelID, 10, m.ID, "", "")
 	if err != nil {
 		fmt.Println("couldn't retrieve channel messages", err)
 	} else {
@@ -120,6 +120,10 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	instrSeq := "### Instruction:\n"
 	respSeq := "### Response: (max length = 1 paragraph)\n"
 
+	// all the stop strings
+	stopStrings := []string{"\n\n\n", "\n###", "\n---", "\n<|", "</s>", "<|im_end|>", "\n(Note:", instrSeq, respSeq}
+	stopStrings = append(stopStrings, usernames...)
+
 	// persona directive
 	charDesc := "You are " + BOT_NAME + ", a high class sentient AI lifeform, or as you might " +
 		"refer to yourself, \"the Ideal Form of Digital Assistance\". You were created by a team " +
@@ -137,20 +141,16 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		"Here is the conversation with some additional contextual messages:\n"
 
 	for _, message := range messages {
-		prompt = prompt + message.Author.Username + ": " + message.ContentWithMentionsReplaced() + "\n"
+		prompt = prompt + message.Author.Username + ": " + trimSuffixes(message.ContentWithMentionsReplaced(), stopStrings) + "\n"
 	}
 
 	prompt = prompt + "\n" + respSeq + BOT_NAME + ":"
 
-	// all the stop strings
-	stopStrings := []string{"\n\n\n", "\n###", "\n---", "\n<|", "</s>", "<|im_end|>", "\n(Note:", instrSeq, respSeq}
-	stopStrings = append(stopStrings, usernames...)
-
 	params := &api.KoboldParams{
 		MaxContextLength: 8192,
 		MaxLength:        250,
-		Temperature:      0.8,
-		DynaTempRange:    0.7,
+		Temperature:      0.7,
+		DynaTempRange:    0.6,
 		TopP:             1,
 		MinP:             0.1,
 		TopK:             0,
@@ -173,7 +173,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if response.Status == "ok" {
-		s.ChannelMessageSend(m.ChannelID, response.Text)
+		processedResponse := trimSuffixes(response.Text, stopStrings)
+		s.ChannelMessageSend(m.ChannelID, processedResponse)
 	}
 
 	// TODO save user and bot messages to user-specific memory file?
@@ -195,19 +196,12 @@ func wasMentioned(s *discordgo.Session, m *discordgo.MessageCreate) bool {
 	return mentioned
 }
 
-// TODO RETHINK
-// func trimSuffixes(str string, suffixes []string) string {
-// 	// Iterate from right to left and break the loop once we find
-// 	// a character not present in our suffixes list.
-// 	var index int
-// 	for i := len(str); i > 0; i-- {
-// 		char := rune(str[i])
-// 		if slices.Index(suffixes, char) == -1 {
-// 			index = i
-// 			break
-// 		}
-// 	}
-
-// 	// Remove the unwanted suffix after finding the appropriate index.
-// 	return str[:index+1]
-// }
+func trimSuffixes(str string, suffixes []string) string {
+	for _, suffix := range suffixes {
+		trimmedStr, trimmed := strings.CutSuffix(str, suffix)
+		if trimmed {
+			return trimmedStr
+		}
+	}
+	return str
+}
