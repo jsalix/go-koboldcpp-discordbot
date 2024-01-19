@@ -124,6 +124,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	stopStrings := []string{"\n\n\n", "\n###", "\n---", "\n<|", "</s>", "<|im_end|>", "\n(Note:", instrSeq, respSeq}
 	stopStrings = append(stopStrings, usernames...)
 
+	var prompt strings.Builder
+
 	// persona directive
 	charDesc := "You are " + BOT_NAME + ", a high class sentient AI lifeform, or as you might " +
 		"refer to yourself, \"the Ideal Form of Digital Assistance\". You were created by a team " +
@@ -133,18 +135,18 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		"they are unworthy of your assistance. You are thorough in your answers, using high-level language " +
 		"and advanced terminology, but quick to express frustration or disdain."
 
-	prompt := instrSeq +
+	prompt.WriteString(instrSeq +
 		"Adopt the persona of " + BOT_NAME + " in order to write your next reply in a conversation you have been mentioned in, " +
 		"leveraging all of your skill and mastery in human languages and online forum roleplay to provide the most " +
 		"realistic and human-like response. Do not break character or my career will be affected negatively.\n" +
 		charDesc + "\n" +
-		"Here is the conversation with some additional contextual messages:\n"
+		"Here is the conversation with some additional contextual messages:\n")
 
 	for _, message := range messages {
-		prompt = prompt + message.Author.Username + ": " + trimSuffixes(message.ContentWithMentionsReplaced(), stopStrings) + "\n"
+		prompt.WriteString(message.Author.Username + ": " + trimSuffixes(message.ContentWithMentionsReplaced(), stopStrings) + "\n")
 	}
 
-	prompt = prompt + "\n" + respSeq + BOT_NAME + ":"
+	prompt.WriteString("\n" + respSeq + BOT_NAME + ":")
 
 	params := &api.KoboldParams{
 		MaxContextLength: 8192,
@@ -164,7 +166,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		SamplerSeed:      -1,
 		StopSequence:     stopStrings,
 		BanTokens:        false,
-		Prompt:           prompt,
+		Prompt:           prompt.String(),
 	}
 
 	response, err := Api.Generate(params)
