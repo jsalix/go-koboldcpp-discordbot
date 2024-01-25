@@ -28,6 +28,7 @@ type KoboldParams struct {
 	SamplerSeed      int      `json:"sampler_seed"`
 	StopSequence     []string `json:"stop_sequence"`
 	BanTokens        bool     `json:"use_default_badwordsids"`
+	TrimStop         bool     `json:"trim_stop"`
 }
 
 type KoboldResponse struct {

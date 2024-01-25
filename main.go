@@ -76,6 +76,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
+	// TODO set discord typing indicator
+
 	// store authors' usernames for stop strings later
 	usernames := make([]string, 0)
 	addUsername := func(username string) {
@@ -143,7 +145,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		"Here is the conversation with some additional contextual messages:\n")
 
 	for _, message := range messages {
-		prompt.WriteString(message.Author.Username + ": " + trimSuffixes(message.ContentWithMentionsReplaced(), stopStrings) + "\n")
+		prompt.WriteString(message.Author.Username + ": " + trimSuffixes(message.ContentWithMentionsReplaced(), &stopStrings) + "\n")
 	}
 
 	prompt.WriteString("\n" + respSeq + BOT_NAME + ":")
@@ -166,6 +168,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		SamplerSeed:      -1,
 		StopSequence:     stopStrings,
 		BanTokens:        false,
+		TrimStop:         true,
 		Prompt:           prompt.String(),
 	}
 
@@ -175,7 +178,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if response.Status == "ok" {
-		processedResponse := trimSuffixes(response.Text, stopStrings)
+		processedResponse := trimSuffixes(response.Text, &stopStrings)
 		s.ChannelMessageSend(m.ChannelID, processedResponse)
 	}
 
@@ -198,8 +201,8 @@ func wasMentioned(s *discordgo.Session, m *discordgo.MessageCreate) bool {
 	return mentioned
 }
 
-func trimSuffixes(str string, suffixes []string) string {
-	for _, suffix := range suffixes {
+func trimSuffixes(str string, suffixes *[]string) string {
+	for _, suffix := range *suffixes {
 		trimmedStr, trimmed := strings.CutSuffix(str, suffix)
 		if trimmed {
 			return trimmedStr
