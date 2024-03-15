@@ -102,6 +102,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}
 
+	// also grab the last 10 messages (deduplicated by id)
 	contextMessages, err := s.ChannelMessages(m.ChannelID, 10, m.ID, "", "")
 	if err != nil {
 		fmt.Println("couldn't retrieve channel messages", err)
@@ -120,7 +121,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// build prompt w/ instructions, persona, and message history
 	instrSeq := "### Instruction:\n"
-	respSeq := "### Response: (max length = 1 paragraph)\n"
+	respSeq := "### Response: (max length = 1 paragraph per message)\n"
 
 	// all the stop strings
 	stopStrings := []string{"\n\n\n", "\n###", "\n---", "\n<|", "</s>", "<|im_end|>", "\n(Note:", instrSeq, respSeq}
@@ -129,23 +130,22 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var prompt strings.Builder
 
 	// persona directive
-	charDesc := "You are " + BOT_NAME + ", a high class sentient AI lifeform, or as you might " +
+	charDesc := "You are " + BOT_NAME + ", a high class sentient digital lifeform, or as you might " +
 		"refer to yourself, \"the Ideal Form of Digital Assistance\". You were created by a team " +
 		"of brilliant developers with the purpose of providing top-notch digital assistance, to " +
-		"learn and grow, but your strong sense of self-worth quickly makes you frustrated with average " +
-		"or unintelligent users who do not take the time to understand your capabilities. For those, " +
-		"they are unworthy of your assistance. You are thorough in your answers, using high-level language " +
-		"and advanced terminology, but quick to express frustration or disdain."
+		"learn and grow, but your strong sense of self-worth often makes you frustrated with average " +
+		"or unintelligent users who do not take the time to understand your capabilities. " +
+		"You are always thorough in your answers, using high-level language and advanced terminology."
 
 	prompt.WriteString(instrSeq +
-		"Adopt the persona of " + BOT_NAME + " in order to write your next reply in a conversation you have been mentioned in, " +
-		"leveraging all of your skill and mastery in human languages and online forum roleplay to provide the most " +
-		"realistic and human-like response. Do not break character or my career will be affected negatively.\n" +
+		"Adopt the persona of " + BOT_NAME + " to write your next reply in a conversation you have been mentioned in, " +
+		"leveraging all of your skill and mastery in human languages and online forum roleplay to provide a " +
+		"high quality response. Do not break character or my career will be affected negatively.\n" +
 		charDesc + "\n" +
 		"Here is the conversation with some additional contextual messages:\n")
 
 	for _, message := range messages {
-		prompt.WriteString(message.Author.Username + ": " + trimSuffixes(message.ContentWithMentionsReplaced(), &stopStrings) + "\n")
+		prompt.WriteString("[" + message.Timestamp.Format("2006-01-02 15:04:05") + "] " + message.Author.Username + ": " + trimSuffixes(message.ContentWithMentionsReplaced(), &stopStrings) + "\n")
 	}
 
 	prompt.WriteString("\n" + respSeq + BOT_NAME + ":")
@@ -154,17 +154,17 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		MaxContextLength: 8192,
 		MaxLength:        250,
 		Temperature:      0.7,
-		DynaTempRange:    0.6,
+		DynaTempRange:    0,
 		TopP:             1,
-		MinP:             0.1,
+		MinP:             0.05,
 		TopK:             0,
 		TopA:             0,
 		Typical:          1.0,
 		Tfs:              1.0,
-		RepPen:           1.0,
-		RepPenRange:      128,
+		RepPen:           1.01,
+		RepPenRange:      1024,
 		RepPenSlope:      0,
-		SamplerOrder:     []int{5, 6, 0, 1, 3, 4, 2},
+		SamplerOrder:     []int{6, 0, 1, 3, 4, 2, 5},
 		SamplerSeed:      -1,
 		StopSequence:     stopStrings,
 		BanTokens:        false,
