@@ -9,14 +9,20 @@ import (
 	"syscall"
 
 	"github.com/jsalix/go-koboldcpp-discordbot/api"
+	"github.com/jsalix/go-koboldcpp-discordbot/prompt"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
 )
 
-var DISCORD_TOKEN string
-var API_URL string
-var BOT_NAME string
+var (
+	DISCORD_TOKEN string
+	API_URL       string
+	PERSONA       string
+)
+
+var PERSONA_DESC string
+var SYSTEM_PROMPT string
 
 var Api *api.KoboldClient
 
@@ -30,7 +36,29 @@ func main() {
 
 	DISCORD_TOKEN = os.Getenv("DISCORD_TOKEN")
 	API_URL = os.Getenv("API_URL")
-	BOT_NAME = os.Getenv("BOT_NAME")
+	PERSONA = os.Getenv("PERSONA")
+
+	// load persona file
+	personaFile, err := os.ReadFile("prompt/persona/" + PERSONA + ".txt")
+	if err != nil {
+		fmt.Println("unable to load persona file")
+		return
+	}
+
+	PERSONA_DESC = string(personaFile)
+
+	if PERSONA_DESC == "" {
+		fmt.Println("WARNING! persona file appears to be empty")
+	}
+
+	// load system prompt
+	systemPromptFile, err := os.ReadFile("prompt/system/default.txt")
+	if err != nil {
+		fmt.Println("unable to load system prompt file")
+		return
+	}
+
+	SYSTEM_PROMPT = string(systemPromptFile)
 
 	// setup discord session
 	dg, err := discordgo.New("Bot " + DISCORD_TOKEN)
@@ -39,6 +67,7 @@ func main() {
 		return
 	}
 
+	// watch for new messages in bot channels
 	dg.AddHandler(messageCreate)
 	dg.Identify.Intents = discordgo.IntentsGuildMessages
 
@@ -48,7 +77,7 @@ func main() {
 		return
 	}
 
-	dg.UpdateWatchStatus(0, "with casual disdain")
+	dg.UpdateWatchStatus(0, "for mentions")
 
 	// create koboldcpp client
 	Api, err = api.NewKoboldClient(API_URL)
@@ -120,48 +149,38 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	slices.Reverse(messages)
 
 	// build prompt w/ instructions, persona, and message history
-	instrSeq := "### Instruction:\n"
-	respSeq := "### Response: (max length = 1 paragraph per message)\n"
+	systemSeq := prompt.MISTRAL_V2.SystemStart
+	systemEnd := prompt.MISTRAL_V2.SystemEnd
+	userSeq := prompt.MISTRAL_V2.UserStart
+	modelSeq := prompt.MISTRAL_V2.UserEnd + prompt.MISTRAL_V2.ModelStart
 
 	// all the stop strings
-	stopStrings := []string{"\n\n\n", "\n###", "\n---", "\n<|", "</s>", "<|im_end|>", "\n(Note:", instrSeq, respSeq}
+	stopStrings := []string{prompt.MISTRAL_V2.ModelEnd, "\n\n\n", "\n---", "\n(Note:"}
 	stopStrings = append(stopStrings, usernames...)
 
 	var prompt strings.Builder
 
-	// persona directive
-	charDesc := "You are " + BOT_NAME + ", a high class sentient digital lifeform, or as you might " +
-		"refer to yourself, \"the Ideal Form of Digital Assistance\". You were created by a team " +
-		"of brilliant developers with the purpose of providing top-notch digital assistance, to " +
-		"learn and grow, but your strong sense of self-worth often makes you frustrated with average " +
-		"or unintelligent users who do not take the time to understand your capabilities. " +
-		"You are always thorough in your answers, using high-level language and advanced terminology."
-
-	prompt.WriteString(instrSeq +
-		"Adopt the persona of " + BOT_NAME + " to write your next reply in a conversation you have been mentioned in, " +
-		"leveraging all of your skill and mastery in human languages and online forum roleplay to provide a " +
-		"high quality response. Do not break character or my career will be affected negatively.\n" +
-		charDesc + "\n" +
-		"Here is the conversation with some additional contextual messages:\n")
+	prompt.WriteString(systemSeq + fmt.Sprintf(SYSTEM_PROMPT, PERSONA, PERSONA_DESC) + systemEnd)
+	prompt.WriteString(userSeq + "## Conversation\n")
 
 	for _, message := range messages {
-		prompt.WriteString("[" + message.Timestamp.Format("2006-01-02 15:04:05") + "] " + message.Author.Username + ": " + trimSuffixes(message.ContentWithMentionsReplaced(), &stopStrings) + "\n")
+		prompt.WriteString("\n[" + message.Timestamp.Format("2006-01-02 15:04:05") + "] " + message.Author.Username + ": " + trimSuffixes(message.ContentWithMentionsReplaced(), &stopStrings))
 	}
 
-	prompt.WriteString("\n" + respSeq + BOT_NAME + ":")
+	prompt.WriteString(modelSeq + PERSONA + ":")
 
 	params := &api.KoboldParams{
-		MaxContextLength: 8192,
+		MaxContextLength: 16384,
 		MaxLength:        250,
-		Temperature:      0.7,
+		Temperature:      0.5,
 		DynaTempRange:    0,
 		TopP:             1,
-		MinP:             0.05,
+		MinP:             0.1,
 		TopK:             0,
 		TopA:             0,
 		Typical:          1.0,
 		Tfs:              1.0,
-		RepPen:           1.01,
+		RepPen:           1.0,
 		RepPenRange:      1024,
 		RepPenSlope:      0,
 		SamplerOrder:     []int{6, 0, 1, 3, 4, 2, 5},
@@ -195,7 +214,7 @@ func wasMentioned(s *discordgo.Session, m *discordgo.MessageCreate) bool {
 			break
 		}
 	}
-	if strings.Contains(strings.ToLower(m.Content), strings.ToLower(BOT_NAME)) {
+	if strings.Contains(strings.ToLower(m.Content), strings.ToLower(PERSONA)) {
 		mentioned = true
 	}
 	return mentioned
