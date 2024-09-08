@@ -131,8 +131,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}
 
-	// also grab the last 10 messages (deduplicated by id)
-	contextMessages, err := s.ChannelMessages(m.ChannelID, 10, m.ID, "", "")
+	// also grab the last X messages (deduplicated by id)
+	contextMessages, err := s.ChannelMessages(m.ChannelID, 20, m.ID, "", "")
 	if err != nil {
 		fmt.Println("couldn't retrieve channel messages", err)
 	} else {
@@ -149,33 +149,28 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	slices.Reverse(messages)
 
 	// build prompt w/ instructions, persona, and message history
-	systemSeq := prompt.MISTRAL_V2.SystemStart
-	systemEnd := prompt.MISTRAL_V2.SystemEnd
-	userSeq := prompt.MISTRAL_V2.UserStart
-	modelSeq := prompt.MISTRAL_V2.UserEnd + prompt.MISTRAL_V2.ModelStart
+	systemSeq := prompt.GEMMA_V2.UserStart
+	modelSeq := prompt.GEMMA_V2.UserEnd + prompt.GEMMA_V2.ModelStart
 
 	// all the stop strings
-	stopStrings := []string{prompt.MISTRAL_V2.ModelEnd, "\n\n\n", "\n---", "\n(Note:"}
+	stopStrings := []string{prompt.GEMMA_V2.ModelEnd, "\n\n\n", "\n---", "\n(Note:"}
 	stopStrings = append(stopStrings, usernames...)
 
-	var prompt strings.Builder
-
-	prompt.WriteString(systemSeq + fmt.Sprintf(SYSTEM_PROMPT, PERSONA, PERSONA_DESC) + systemEnd)
-	prompt.WriteString(userSeq + "## Conversation\n")
+	var messagesPrompt strings.Builder
 
 	for _, message := range messages {
-		prompt.WriteString("\n[" + message.Timestamp.Format("2006-01-02 15:04:05") + "] " + message.Author.Username + ": " + trimSuffixes(message.ContentWithMentionsReplaced(), &stopStrings))
+		messagesPrompt.WriteString("\n[" + message.Timestamp.Format("2006-01-02 15:04:05") + "] " + message.Author.Username + ": " + trimSuffixes(message.ContentWithMentionsReplaced(), &stopStrings))
 	}
 
-	prompt.WriteString(modelSeq + PERSONA + ":")
+	prompt := systemSeq + fmt.Sprintf(SYSTEM_PROMPT, PERSONA, PERSONA_DESC, messagesPrompt.String()) + modelSeq + PERSONA + ":"
 
 	params := &api.KoboldParams{
 		MaxContextLength: 16384,
 		MaxLength:        250,
-		Temperature:      0.5,
+		Temperature:      0.4,
 		DynaTempRange:    0,
 		TopP:             1,
-		MinP:             0.1,
+		MinP:             0.05,
 		TopK:             0,
 		TopA:             0,
 		Typical:          1.0,
@@ -188,7 +183,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		StopSequence:     stopStrings,
 		BanTokens:        false,
 		TrimStop:         true,
-		Prompt:           prompt.String(),
+		Prompt:           prompt,
 	}
 
 	response, err := Api.Generate(params)
