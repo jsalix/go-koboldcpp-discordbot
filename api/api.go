@@ -98,6 +98,84 @@ func (kobold *KoboldClient) Generate(params *KoboldParams) (*KoboldResponse, err
 	return mapKoboldResponse(resp)
 }
 
+func (kobold *KoboldClient) GenerateAsync(params *KoboldParams) <-chan *KoboldResponse {
+	responseChan := make(chan *KoboldResponse)
+	body, err := json.Marshal(*params)
+	if err != nil {
+		responseChan <- &KoboldResponse{Status: "error", Text: err.Error()}
+		close(responseChan)
+		return responseChan
+	}
+	req, err := http.NewRequest("POST", kobold.ApiUrl+"/latest/generate", bytes.NewBuffer(body))
+	if err != nil {
+		responseChan <- &KoboldResponse{Status: "error", Text: err.Error()}
+		close(responseChan)
+		return responseChan
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	client.Timeout = 0
+	go func() {
+		resp, err := client.Do(req)
+		if err != nil {
+			responseChan <- &KoboldResponse{Status: "error", Text: err.Error()}
+			close(responseChan)
+			return
+		}
+		result, err := mapKoboldResponse(resp)
+		if err != nil {
+			responseChan <- &KoboldResponse{Status: "error", Text: err.Error()}
+			close(responseChan)
+			return
+		}
+		responseChan <- result
+		close(responseChan)
+	}()
+	return responseChan
+}
+
+// func (kobold *KoboldClient) GenerateSSE(params *KoboldParams) (*KoboldResponse, error) {
+// 	body, err := json.Marshal(*params)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	req, err := http.NewRequest("POST", kobold.ApiUrl+"/extra/generate/stream", bytes.NewBuffer(body))
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	req.Header.Set("Content-Type", "application/json")
+// 	client := &http.Client{}
+// 	client.Timeout = 0
+// 	resp, err := client.Do(req)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	defer resp.Body.Close()
+
+// 	var buf bytes.Buffer
+// 	tee := io.TeeReader(resp.Body, &buf)
+// 	decoder := json.NewDecoder(tee)
+
+// 	for {
+// 		var rawResp koboldResponseRaw
+// 		err := decoder.Decode(&rawResp)
+// 		if err != nil {
+// 			if err == io.EOF {
+// 				break
+// 			}
+// 			return nil, err
+// 		}
+// 		if len(rawResp.Results) > 0 {
+// 			return &KoboldResponse{
+// 				Status: "ok",
+// 				Text:   rawResp.Results[0].Text,
+// 			}, nil
+// 		}
+// 	}
+
+// 	return nil, fmt.Errorf("no response received")
+// }
+
 func (kobold *KoboldClient) Check() (*KoboldResponse, error) {
 	req, err := http.NewRequest("POST", kobold.ApiUrl+"/extra/generate/check", nil)
 	if err != nil {

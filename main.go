@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/jsalix/go-koboldcpp-discordbot/api"
 	"github.com/jsalix/go-koboldcpp-discordbot/prompt"
@@ -25,6 +26,7 @@ var PERSONA_DESC string
 var SYSTEM_PROMPT string
 
 var Api *api.KoboldClient
+var isResponding = false
 
 func main() {
 	// load vars from .env
@@ -95,6 +97,14 @@ func main() {
 }
 
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
+	// return if already responding to a channel (TODO implement proper queuing instead of dropping)
+	if isResponding {
+		fmt.Println("WARNING! already generating a response for another message")
+		return
+	}
+	isResponding = true
+	defer func() { isResponding = false }()
+
 	// ignore if own message
 	if m.Author.ID == s.State.User.ID {
 		return
@@ -104,8 +114,6 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !wasMentioned(s, m) || m.MentionEveryone {
 		return
 	}
-
-	// TODO set discord typing indicator
 
 	// store authors' usernames for stop strings later
 	usernames := make([]string, 0)
@@ -186,14 +194,54 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		Prompt:           prompt,
 	}
 
-	response, err := Api.Generate(params)
-	if err != nil {
-		fmt.Println("there was an error while waiting on a response from koboldcpp!", err)
-	}
+	// show typing indicator while generating response
+	s.ChannelTyping(m.ChannelID)
 
-	if response.Status == "ok" {
-		processedResponse := trimSuffixes(response.Text, &stopStrings)
-		s.ChannelMessageSend(m.ChannelID, processedResponse)
+	// response, err := Api.Generate(params)
+	// if err != nil {
+	// 	fmt.Println("there was an error while waiting on a response from koboldcpp!", err)
+	// }
+
+	Api.GenerateAsync(params)
+
+	var sentMsg *discordgo.Message
+	previousResp := ""
+	for {
+		time.Sleep(1 * time.Second)
+
+		// keep typing indicator active
+		s.ChannelTyping(m.ChannelID)
+
+		response, err := Api.Check()
+		if err != nil {
+			fmt.Println("there was an error while getting response from koboldcpp!", err)
+			break
+		}
+
+		if response.Status == "ok" {
+			processedResponse := strings.TrimSpace(trimSuffixes(response.Text, &stopStrings))
+
+			if processedResponse == "" {
+				fmt.Println("got empty response")
+				continue
+			}
+
+			if sentMsg == nil {
+				sentMsg, err = s.ChannelMessageSend(m.ChannelID, processedResponse)
+				if err != nil {
+					fmt.Println("error sending discord message", err)
+				}
+			} else {
+				if processedResponse == previousResp {
+					fmt.Println("got same response, finished")
+					break
+				}
+
+				s.ChannelMessageEdit(sentMsg.ChannelID, sentMsg.ID, processedResponse)
+			}
+
+			previousResp = processedResponse
+		}
 	}
 
 	// TODO save user and bot messages to user-specific memory file?
